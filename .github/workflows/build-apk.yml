@@ -15,11 +15,25 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
 
-    - name: Extract ZIP file
+    - name: Extract ZIP file if exists
       run: |
         if [ -f "VideoPlayerAndroid.zip" ]; then
+          echo "Found ZIP file, extracting..."
           unzip -q VideoPlayerAndroid.zip
+          echo "Listing contents:"
           ls -la
+        fi
+
+    - name: Find project directory
+      id: find_project
+      run: |
+        if [ -d "VideoPlayerAndroid" ]; then
+          echo "project_dir=VideoPlayerAndroid" >> $GITHUB_OUTPUT
+          cd VideoPlayerAndroid
+          pwd
+        else
+          echo "project_dir=." >> $GITHUB_OUTPUT
+          pwd
         fi
 
     - name: Set up JDK 11
@@ -27,32 +41,28 @@ jobs:
       with:
         java-version: '11'
         distribution: 'temurin'
-        cache: gradle
+
+    - name: Setup Gradle
+      uses: gradle/gradle-build-action@v3
+      with:
+        gradle-version: wrapper
 
     - name: Grant execute permission for gradlew
-      run: |
-        if [ -d "VideoPlayerAndroid" ]; then
-          cd VideoPlayerAndroid
-        fi
-        chmod +x gradlew
+      working-directory: ${{ steps.find_project.outputs.project_dir }}
+      run: chmod +x gradlew
 
     - name: Build APK with Gradle
-      run: |
-        if [ -d "VideoPlayerAndroid" ]; then
-          cd VideoPlayerAndroid
-          ./gradlew assembleDebug
-        else
-          ./gradlew assembleDebug
-        fi
+      working-directory: ${{ steps.find_project.outputs.project_dir }}
+      run: ./gradlew assembleDebug
 
     - name: Upload APK to artifacts
       uses: actions/upload-artifact@v4
       with:
         name: app-debug
         path: |
-          app/build/outputs/apk/debug/app-debug.apk
-          VideoPlayerAndroid/app/build/outputs/apk/debug/app-debug.apk
+          ${{ steps.find_project.outputs.project_dir }}/app/build/outputs/apk/debug/app-debug.apk
         retention-days: 30
+        if-no-files-found: warn
 
     - name: Create Release
       if: startsWith(github.ref, 'refs/tags/')
@@ -72,6 +82,6 @@ jobs:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
         upload_url: ${{ steps.create_release.outputs.upload_url }}
-        asset_path: ./app/build/outputs/apk/debug/app-debug.apk
+        asset_path: ${{ steps.find_project.outputs.project_dir }}/app/build/outputs/apk/debug/app-debug.apk
         asset_name: VideoPlayerApp-${{ github.ref }}.apk
         asset_content_type: application/vnd.android.package-archive
