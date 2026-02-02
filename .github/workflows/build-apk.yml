@@ -15,12 +15,39 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
 
+    - name: List files before extraction
+      run: ls -la
+
     - name: Extract ZIP file
       run: |
         if [ -f "VideoPlayerApp-Final.zip" ]; then
-          unzip -q VideoPlayerApp-Final.zip
+          echo "✅ Found VideoPlayerApp-Final.zip"
+          echo "Starting extraction (with overwrite)..."
+          unzip -o -q VideoPlayerApp-Final.zip || { echo "❌ unzip failed!"; exit 1; }
+          echo "Extraction completed."
+          echo "Files after extraction:"
           ls -la
+        else
+          echo "❌ VideoPlayerApp-Final.zip not found in repository root!"
+          echo "Current directory contents:"
+          ls -la
+          exit 1
         fi
+
+    - name: Detect project root (in case ZIP has extra folder)
+      run: |
+        # 如果解壓後出現一個資料夾包住整個專案，自動 cd 進去
+        if [ -d "VideoPlayerApp-Final" ] && [ -f "VideoPlayerApp-Final/gradlew" ]; then
+          echo "Found nested project folder → changing directory"
+          cd VideoPlayerApp-Final
+        fi
+        # 確認 gradlew 是否存在
+        if [ ! -f "gradlew" ]; then
+          echo "❌ gradlew not found! Current dir: $(pwd)"
+          ls -la
+          exit 1
+        fi
+        pwd
 
     - name: Set up JDK 11
       uses: actions/setup-java@v4
@@ -29,14 +56,26 @@ jobs:
         distribution: 'temurin'
 
     - name: Grant execute permission for gradlew
-      run: chmod +x ./gradlew
+      run: |
+        chmod +x ./gradlew
+        ls -la | grep gradlew
 
     - name: Build APK with Gradle
-      run: ./gradlew assembleDebug
+      run: |
+        echo "Running Gradle assembleDebug..."
+        ./gradlew assembleDebug --stacktrace
+      # 如果 build 失敗會顯示更詳細的錯誤訊息
 
-    - name: Upload APK to artifacts
+    - name: Upload APK artifact
+      if: success()  # 只在 build 成功時上傳
       uses: actions/upload-artifact@v4
       with:
         name: app-debug
         path: app/build/outputs/apk/debug/app-debug.apk
         retention-days: 30
+
+    - name: Show APK location (for debug)
+      if: always()
+      run: |
+        echo "APK path check:"
+        find . -name "*.apk" 2>/dev/null || echo "No APK found"
